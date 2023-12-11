@@ -6,6 +6,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <stb_image.h>
+#include <labhelper.h>
 
 using namespace glm;
 using std::string;
@@ -83,16 +84,71 @@ void HeightField::loadDiffuseTexture(const std::string& diffusePath)
 
 void HeightField::generateMesh(int tesselation)
 {
+	m_meshResolution = tesselation;
+
+	m_numIndices = (tesselation + 1) * (tesselation + 1);
+
+
+	// Allocate memory for vertices and texture coordinates
+	std::vector<GLfloat> vertices(m_numIndices * 3); // 3 components per vertex (x, y, z)
+	std::vector<GLfloat> indices(m_numIndices);
+	std::vector<GLfloat> texCoords(m_numIndices * 2);
 	// generate a mesh in range -1 to 1 in x and z
 	// (y is 0 but will be altered in height field vertex shader)
+	float step = 2.0f / static_cast<float>(tesselation);
+
+	for (int i = 0; i <= tesselation; ++i) { //X-LED
+		for (int j = 0; j <= tesselation; ++j) { //Z-LED
+
+		}
+	}
+
+	/*const float positions[] = {
+		//	 X      Y     Z
+		0.0f,  0.5f,  1.0f, // v0
+		-0.5f, -0.5f, 1.0f, // v1
+		0.5f,  -0.5f, 1.0f  // v2
+	};
+
+	const int indices2[] = {
+	0, 1, 3, // Triangle 1
+	1, 2, 3  // Triangle 2
+	};*/
+
+
+	// Set up OpenGL buffers
+
+
+	glGenBuffers(1, &m_positionBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, m_positionBuffer);
+	glBufferData(GL_ARRAY_BUFFER, labhelper::array_length(positions) * sizeof(float), positions, GL_STATIC_DRAW);
+
+	glGenVertexArrays(1, &m_vao);
+	glBindVertexArray(m_vao);
+
+	glBindBuffer(GL_ARRAY_BUFFER, m_positionBuffer);
+
+	glVertexAttribPointer(0,3,GL_FLOAT, false,0,0);
+	glEnableVertexAttribArray(0);
+
+	glGenBuffers(1, &m_indexBuffer);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, labhelper::array_length(indices2) * sizeof(float), indices2, GL_STATIC_DRAW);
+
+	/*glGenBuffers(1, &m_uvBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, m_uvBuffer);
+	glBufferData(GL_ARRAY_BUFFER, texCoords.size() * sizeof(GLfloat), texCoords.data(), GL_STATIC_DRAW);*/
+
+	/*glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), (void*)0);
+	glEnableVertexAttribArray(1);*/
+
+	/*glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);*/
 }
 
 void HeightField::submitTriangles(void)
 {
-	if(m_vao == UINT32_MAX)
-	{
-		std::cout << "No vertex array is generated, cannot draw anything.\n";
-		return;
-	}
-
+	glBindVertexArray(m_vao);
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+	glBindVertexArray(0);
 }

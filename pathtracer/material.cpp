@@ -38,7 +38,15 @@ WiSample Diffuse::sample_wi(const vec3& wo, const vec3& n) const
 
 vec3 MicrofacetBRDF::f(const vec3& wi, const vec3& wo, const vec3& n) const
 {
-	return vec3(0.0f);
+	vec3 wh = normalize(wi + wo);
+	float ndotwh = fmax(0.001, dot(n, wh));
+	float ndotwo = fmax(0.001, dot(n, wo));
+	float wodotwh = fmax(0.001, dot(wo, wh));
+	float ndotwi = fmax(0.001, dot(n, wi));
+	float D = ((shininess + 2) / (2 * M_PI)) * (pow(ndotwh, shininess));
+	float G = fmin(1, min(((2 * ndotwh * ndotwo) / (wodotwh)), ((2 * ndotwh * ndotwi) / (wodotwh))));
+	float brdf = (D * G) / (4 * clamp(ndotwo * ndotwi, 0.01f, 1.0f));
+	return brdf * ndotwi * vec3(1.0f); 
 }
 
 WiSample MicrofacetBRDF::sample_wi(const vec3& wo, const vec3& n) const
@@ -52,13 +60,19 @@ WiSample MicrofacetBRDF::sample_wi(const vec3& wo, const vec3& n) const
 
 float BSDF::fresnel(const vec3& wi, const vec3& wo) const
 {
-	return 0.0f;
+	vec3 wh = normalize(wi + wo);
+	float whdotwi = max(0.0f, dot(wo, wh));
+	float F = R0 + (1 - R0) * pow(1 - whdotwi, 5.0);
+	return F;
 }
 
 
 vec3 DielectricBSDF::f(const vec3& wi, const vec3& wo, const vec3& n) const
 {
-	return vec3(0);
+	return vec3(1.0f);
+	float F = fresnel(wi, wo);
+	vec3 bsdf = F * reflective_material->f(wi, wo, n) + (1 - F) * transmissive_material->f(wi, wo, n);
+	return bsdf;
 }
 
 WiSample DielectricBSDF::sample_wi(const vec3& wo, const vec3& n) const
@@ -73,7 +87,9 @@ WiSample DielectricBSDF::sample_wi(const vec3& wo, const vec3& n) const
 
 vec3 MetalBSDF::f(const vec3& wi, const vec3& wo, const vec3& n) const
 {
-	return vec3(0);
+	float F = fresnel(wi, wo);
+	vec3 bsdf = F * reflective_material->f(wi, wo, n); //CHECK THIS
+	return bsdf * color;
 }
 
 WiSample MetalBSDF::sample_wi(const vec3& wo, const vec3& n) const
@@ -87,7 +103,10 @@ WiSample MetalBSDF::sample_wi(const vec3& wo, const vec3& n) const
 
 vec3 BSDFLinearBlend::f(const vec3& wi, const vec3& wo, const vec3& n) const
 {
-	return vec3(0.0);
+	vec3 res0 = bsdf0->f(wi, wo, n);
+	vec3 res1 = bsdf1->f(wi, wo, n);
+	vec3 blend = w * res0 + (1.0f - w) * res1;
+	return blend;
 }
 
 WiSample BSDFLinearBlend::sample_wi(const vec3& wo, const vec3& n) const

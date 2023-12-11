@@ -1,4 +1,5 @@
 #include <string>
+#include <vector>
 #include <GL/glew.h>
 
 class HeightField
@@ -14,6 +15,8 @@ public:
 	GLuint m_numIndices;
 	std::string m_heightFieldPath;
 	std::string m_diffuseTexturePath;
+	/*std::vector<float> vertices;  // Vertex data
+	std::vector<unsigned int> indices;  // Index data*/
 
 	HeightField(void);
 

@@ -39,6 +39,7 @@ bool g_isMouseDragging = false;
 // Shader programs
 ///////////////////////////////////////////////////////////////////////////////
 GLuint backgroundProgram, shaderProgram, postFxShader;
+GLuint  horizontalBlurShader = 0, verticalBlurShader = 0, cutoffShader = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Environment
@@ -125,8 +126,8 @@ struct FboInfo
 		glBindTexture(GL_TEXTURE_2D, colorTextureTarget);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
 
 		glGenTextures(1, &depthBuffer);
 		glBindTexture(GL_TEXTURE_2D, depthBuffer);
@@ -141,6 +142,13 @@ struct FboInfo
 		///////////////////////////////////////////////////////////////////////
 		// Task 1
 		//...
+		glGenFramebuffers(1, &framebufferId);
+		glBindFramebuffer(GL_FRAMEBUFFER, framebufferId);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTextureTarget, 0);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthBuffer, 0);
 
 		// check if framebuffer is complete
 		isComplete = checkFramebufferComplete();
@@ -214,6 +222,16 @@ void initialize()
 	                                             "../lab5-rendertotexture/shading.frag");
 	postFxShader = labhelper::loadShaderProgram("../lab5-rendertotexture/postFx.vert",
 	                                            "../lab5-rendertotexture/postFx.frag");
+	horizontalBlurShader = labhelper::loadShaderProgram("../lab5-rendertotexture/postFx.vert",
+												"../lab5-rendertotexture/horizontal_blur.frag");
+
+	verticalBlurShader = labhelper::loadShaderProgram("../lab5-rendertotexture/postFx.vert",
+												"../lab5-rendertotexture/vertical_blur.frag");
+
+
+	cutoffShader = labhelper::loadShaderProgram("../lab5-rendertotexture/postFx.vert",
+												"../lab5-rendertotexture/cutoff.frag");
+
 
 	///////////////////////////////////////////////////////////////////////////
 	// Load environment map
@@ -240,6 +258,10 @@ void initialize()
 	///////////////////////////////////////////////////////////////////////////
 	int w, h;
 	SDL_GetWindowSize(g_window, &w, &h);
+	const int numFbos = 5;
+	for (int i = 0; i < numFbos; i++) {
+		fboList.push_back(FboInfo(w, h));
+	}
 }
 
 
@@ -345,11 +367,23 @@ void display()
 	///////////////////////////////////////////////////////////////////////////
 	// Task 2
 	// ...
+	FboInfo& securityFB = fboList[0];
+	glBindFramebuffer(GL_FRAMEBUFFER, securityFB.framebufferId);
+
+	glViewport(0, 0, securityFB.width, securityFB.height);
+	glClearColor(0.2, 0.2, 0.8, 1.0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	drawScene(securityCamViewMatrix, securityCamProjectionMatrix);
+
+	labhelper::Material& screen = landingpadModel->m_materials[8];
+	screen.m_emission_texture.gl_id = securityFB.colorTextureTarget;
 
 	///////////////////////////////////////////////////////////////////////////
 	// draw scene from camera
 	///////////////////////////////////////////////////////////////////////////
-	glBindFramebuffer(GL_FRAMEBUFFER, 0); // to be replaced with another framebuffer when doing post processing
+	FboInfo& sceneFB = fboList[1];
+	glBindFramebuffer(GL_FRAMEBUFFER, sceneFB.framebufferId); // to be replaced with another framebuffer when doing post processing
 	glViewport(0, 0, w, h);
 	glClearColor(0.2f, 0.2f, 0.8f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -359,6 +393,66 @@ void display()
 	// camera (obj-model)
 	drawCamera(securityCamViewMatrix, viewMatrix, projectionMatrix);
 
+	FboInfo& horizontalBlurFob = fboList[3];
+	FboInfo& verticalBlurFob = fboList[4];
+	FboInfo& cutOffFob = fboList[2];
+
+	if(currentEffect == PostProcessingEffect::Separable_blur) 
+	{
+		glBindFramebuffer(GL_FRAMEBUFFER, horizontalBlurFob.framebufferId);
+		glViewport(0, 0, horizontalBlurFob.width, horizontalBlurFob.height);
+		glClear(GL_DEPTH_BUFFER_BIT);
+
+		glUseProgram(horizontalBlurShader);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, sceneFB.colorTextureTarget);
+
+		labhelper::drawFullScreenQuad();
+
+		glBindFramebuffer(GL_FRAMEBUFFER, verticalBlurFob.framebufferId);
+		glViewport(0, 0, verticalBlurFob.width, verticalBlurFob.height);
+		glClear(GL_DEPTH_BUFFER_BIT);
+
+		glUseProgram(verticalBlurShader);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, horizontalBlurFob.colorTextureTarget);
+		labhelper::drawFullScreenQuad();
+	}
+
+	if(currentEffect == PostProcessingEffect::Bloom)
+	{
+		glBindFramebuffer(GL_FRAMEBUFFER, cutOffFob.framebufferId);
+		glViewport(0, 0, cutOffFob.width, cutOffFob.height);
+		glClear(GL_DEPTH_BUFFER_BIT);
+
+		glUseProgram(cutoffShader);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, sceneFB.colorTextureTarget);
+		labhelper::drawFullScreenQuad();
+
+		glBindFramebuffer(GL_FRAMEBUFFER, horizontalBlurFob.framebufferId);
+		glViewport(0, 0, horizontalBlurFob.width, horizontalBlurFob.height);
+		glClear(GL_DEPTH_BUFFER_BIT);
+
+		glUseProgram(horizontalBlurShader);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, cutOffFob.colorTextureTarget);
+
+		labhelper::drawFullScreenQuad();
+
+		glBindFramebuffer(GL_FRAMEBUFFER, verticalBlurFob.framebufferId);
+		glViewport(0, 0, verticalBlurFob.width, verticalBlurFob.height);
+		glClear(GL_DEPTH_BUFFER_BIT);
+
+		glUseProgram(verticalBlurShader);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, horizontalBlurFob.colorTextureTarget);
+		labhelper::drawFullScreenQuad();
+	}
+
 	///////////////////////////////////////////////////////////////////////////
 	// Post processing pass(es)
 	///////////////////////////////////////////////////////////////////////////
@@ -367,6 +461,27 @@ void display()
 	// 2. Set postFxShader as active
 	// 3. Bind the framebuffer to texture unit 0
 	// 4. Draw a quad over the entire viewport
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glViewport(0, 0, w, h);
+	glClearColor(0.2f, 0.2f, 0.8f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	glUseProgram(postFxShader);
+
+	labhelper::setUniformSlow(postFxShader, "time", currentTime);
+	labhelper::setUniformSlow(postFxShader, "currentEffect", currentEffect);
+	labhelper::setUniformSlow(postFxShader, "filterSize", filterSizes[filterSize - 1]);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, sceneFB.colorTextureTarget);
+
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, verticalBlurFob.colorTextureTarget);
+
+
+
+	labhelper::drawFullScreenQuad();
 
 	// Task 4: Set the required uniforms
 
@@ -491,7 +606,7 @@ void gui()
 	ImGui::RadioButton("Mushroom", &currentEffect, PostProcessingEffect::Mushroom);
 	ImGui::RadioButton("Blur", &currentEffect, PostProcessingEffect::Blur);
 	ImGui::SameLine();
-	ImGui::SliderInt("Filter size", &filterSize, 1, 12);
+	ImGui::SliderInt("Filter size", &filterSize, 1, 16);
 	ImGui::RadioButton("Grayscale", &currentEffect, PostProcessingEffect::Grayscale);
 	ImGui::RadioButton("All of the above", &currentEffect, PostProcessingEffect::Composition);
 	ImGui::RadioButton("Mosaic", &currentEffect, PostProcessingEffect::Mosaic);

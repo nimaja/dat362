@@ -73,29 +73,68 @@ vec3 Li(Ray& primary_ray)
 	vec3 path_throughput = vec3(1.0);
 	Ray current_ray = primary_ray;
 
-	///////////////////////////////////////////////////////////////////
-	// Get the intersection information from the ray
-	///////////////////////////////////////////////////////////////////
-	Intersection hit = getIntersection(current_ray);
-	///////////////////////////////////////////////////////////////////
-	// Create a Material tree for evaluating brdfs and calculating
-	// sample directions.
-	///////////////////////////////////////////////////////////////////
+	for (int bounces = 0; bounces <= settings.max_bounces; bounces++) {
 
-	Diffuse diffuse(hit.material->m_color);
-	BTDF& mat = diffuse;
-	///////////////////////////////////////////////////////////////////
-	// Calculate Direct Illumination from light.
-	///////////////////////////////////////////////////////////////////
-	{
+		///////////////////////////////////////////////////////////////////
+		// Get the intersection information from the ray
+		///////////////////////////////////////////////////////////////////
+		Intersection hit = getIntersection(current_ray);
+
 		const float distance_to_light = length(point_light.position - hit.position);
 		const float falloff_factor = 1.0f / (distance_to_light * distance_to_light);
-		vec3 Li = point_light.intensity_multiplier * point_light.color * falloff_factor;
 		vec3 wi = normalize(point_light.position - hit.position);
-		L = mat.f(wi, hit.wo, hit.shading_normal) * Li * std::max(0.0f, dot(wi, hit.shading_normal));
+
+
+		///////////////////////////////////////////////////////////////////
+		// Create a Material tree for evaluating brdfs and calculating
+		// sample directions.
+		///////////////////////////////////////////////////////////////////
+	
+		Diffuse diffuse(hit.material->m_color);
+		MicrofacetBRDF microfacet(hit.material->m_shininess);
+		DielectricBSDF dielectric(&microfacet, &diffuse, hit.material->m_fresnel);
+		BSDF& mat = dielectric;
+
+		//MetalBSDF metal(&microfacet, hit.material->m_color, hit.material->m_fresnel);
+		//BSDFLinearBlend metal_blend(hit.material->m_metalness, &metal, &dielectric);
+		//BTDF& mat = diffuse; 
+		Ray shadowRay(hit.position + EPSILON * hit.geometry_normal, wi, 0.0f, distance_to_light);
+
+		///////////////////////////////////////////////////////////////////
+		// Calculate Direct Illumination from light.
+		///////////////////////////////////////////////////////////////////
+		if(!occluded(shadowRay)) {
+
+			vec3 Li = point_light.intensity_multiplier * point_light.color * falloff_factor;
+
+			//L += dielectric.f(wi, hit.wo, hit.shading_normal) * Li * std::max(0.0f, dot(wi, hit.shading_normal));
+		}
+
+		L += path_throughput * hit.material->m_emission;
+
+		WiSample sample = dielectric.sample_wi(hit.wo, hit.shading_normal);
+		vec3 f = sample.f;
+		float pdf = sample.pdf;
+
+		if (pdf < EPSILON) return L;
+
+		float cosineterm = abs(dot(sample.wi, hit.shading_normal));
+
+		path_throughput = path_throughput * (f * cosineterm) / pdf;
+
+		if (path_throughput == vec3(0, 0, 0)) return L;
+
+		current_ray = Ray();
+
+		current_ray.d = sample.wi;
+
+		current_ray.o += EPSILON * hit.shading_normal;
+
+		if (!intersect(current_ray))
+			return L + path_throughput * Lenvironment(current_ray.d);
+
 	}
-	// Return the final outgoing radiance for the primary ray
-	return L;
+
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -133,8 +172,9 @@ void tracePaths(const glm::mat4& V, const glm::mat4& P)
 			primaryRay.o = camera_pos;
 			// Create a ray that starts in the camera position and points toward
 			// the current pixel on a virtual screen.
-			vec2 screenCoord = vec2(float(x) / float(rendered_image.width),
-			                        float(y) / float(rendered_image.height));
+			vec2 screenCoord = vec2((float(x) + randf()) / float(rendered_image.width),
+			                        (float(y) + randf()) / float(rendered_image.height));
+
 			// Calculate direction
 			vec4 viewCoord = vec4(screenCoord.x * 2.0f - 1.0f, screenCoord.y * 2.0f - 1.0f, 1.0f, 1.0f);
 			vec3 p = homogenize(inverse(P * V) * viewCoord);

@@ -16,11 +16,15 @@ extern "C" _declspec(dllexport) unsigned int NvOptimusEnablement = 0x00000001;
 
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 using namespace glm;
 
 #include <Model.h>
 #include "hdr.h"
 #include "fbo.h"
+#include "heightfield.h"
+
+#include <glm/gtc/matrix_transform.hpp>
 
 
 
@@ -65,7 +69,8 @@ vec3 point_light_color = vec3(1.f, 1.f, 1.f);
 float point_light_intensity_multiplier = 10000.0f;
 
 
-
+HeightField terrain;
+GLuint terrainShader;
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -111,6 +116,7 @@ void loadShaders(bool is_reload)
 	{
 		shaderProgram = shader;
 	}
+
 }
 
 
@@ -155,6 +161,7 @@ void initialize()
 	glEnable(GL_CULL_FACE);  // enables backface culling
 
 
+	terrain.generateMesh(1);
 
 }
 
@@ -214,7 +221,7 @@ void drawScene(GLuint currentShaderProgram,
 	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix",
 	                          inverse(transpose(viewMatrix * landingPadModelMatrix)));
 
-	labhelper::render(landingpadModel);
+	//labhelper::render(landingpadModel);
 
 	// Fighter
 	labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix",
@@ -223,7 +230,7 @@ void drawScene(GLuint currentShaderProgram,
 	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix",
 	                          inverse(transpose(viewMatrix * fighterModelMatrix)));
 
-	labhelper::render(fighterModel);
+	//labhelper::render(fighterModel);
 }
 
 
@@ -284,6 +291,22 @@ void display(void)
 	debugDrawLight(viewMatrix, projMatrix, vec3(lightPosition));
 
 
+	terrainShader = labhelper::loadShaderProgram("../project/heightfield.vert", "../project/heightfield.frag");
+
+
+	glm::vec3 scale = glm::vec3(10.0f, 10.0f, 10.0f);
+	glm::mat4 modelMatrix = glm::mat4();
+	modelMatrix = glm::scale(modelMatrix, scale);
+
+	glUseProgram(terrainShader);
+
+	labhelper::setUniformSlow(terrainShader, "modelViewProjectionMatrix", projMatrix * viewMatrix * mat4(1.0f));
+	labhelper::setUniformSlow(terrainShader, "modelViewMatrix", viewMatrix * mat4(1.0f));
+	//labhelper::setUniformSlow(terrainShader, "normalMatrix", inverse(transpose(viewMatrix * mat4(1.0f))));
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	terrain.submitTriangles();
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
 }
 
